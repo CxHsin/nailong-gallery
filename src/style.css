@@ -44,3 +44,5 @@ main{overflow:clip}
 .detail-tag svg.tag-surface{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}
 .detail-tag svg.tag-surface text{font:inherit}
 .booting .gallery{pointer-events:none}.booting .navigation{opacity:0;pointer-events:none}
+.ring-copy{pointer-events:none}.ring-links button{pointer-events:auto}
+.gallery{z-index:0}.info-layer{isolation:isolate}

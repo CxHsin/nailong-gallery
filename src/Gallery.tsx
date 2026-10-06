@@ -116,18 +116,19 @@ export function Gallery({ state, onOpen, onReady, onProgress }: { state: Gallery
     function hit(){ray.setFromCamera(pointer,camera);return ray.intersectObjects(cards.filter(m=>m.visible))[0]?.object.userData.index??-1;}
     function open(i:number){if(props.current.state.mode!=='featured'||props.current.state.flight)return;motion.stop();dragging=false;motion.dragging=false;props.current.onOpen(i,bounds[i]);}
     function setPointer(e:PointerEvent){const r=el.getBoundingClientRect();pointer.set((e.clientX-r.left)/width*2-1,1-(e.clientY-r.top)/height*2);pointerDirty=true;}
-    function down(e:PointerEvent){if(props.current.state.mode!=='featured'||props.current.state.flight||e.button!==0)return;setPointer(e);downIndex=hit();dragging=true;travel=0;lastX=e.clientX;lastY=e.clientY;motion.grab(e.timeStamp);el.setPointerCapture(e.pointerId);}
+    const canBrowse=()=>!props.current.state.flight&&(props.current.state.intro??1)>=1&&['featured','about','collection'].includes(props.current.state.mode);
+    function down(e:PointerEvent){if(!canBrowse()||e.button!==0)return;setPointer(e);downIndex=hit();dragging=true;travel=0;lastX=e.clientX;lastY=e.clientY;motion.grab(e.timeStamp);el.setPointerCapture(e.pointerId);}
     function move(e:PointerEvent){setPointer(e);if(!dragging)return;const samples=e.getCoalescedEvents?.();for(const sample of samples?.length?samples:[e]){const delta=width<650?lastY-sample.clientY:lastX-sample.clientX;travel+=Math.hypot(lastX-sample.clientX,lastY-sample.clientY);const units=width<650?delta/height*halfH*2:delta/width*halfW*2;if(units)motion.dragBy(units,sample.timeStamp);lastX=sample.clientX;lastY=sample.clientY;}}
     function up(e:PointerEvent){if(!dragging)return;move(e);dragging=false;setPointer(e);motion.release(e.timeStamp,travel<6);if(travel<6){const i=hit();if(i>=0&&i===downIndex)open(i);}if(el.hasPointerCapture(e.pointerId))el.releasePointerCapture(e.pointerId);}
     function cancel(){if(dragging)motion.release(performance.now(),true);dragging=false;}
-    function wheel(e:WheelEvent){if(props.current.state.mode!=='featured'||props.current.state.flight||e.ctrlKey)return;e.preventDefault();const horizontal=Math.abs(e.deltaX)>Math.abs(e.deltaY);const delta=horizontal?e.deltaX:e.deltaY;const factor=e.deltaMode===1?16:e.deltaMode===2?(horizontal?width:height):1;motion.wheelBy(delta*factor,width<650?halfH*2/height:halfW*2/width,e.timeStamp);}
-    function key(e:KeyboardEvent){if(props.current.state.mode!=='featured'||props.current.state.flight)return;if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();motion.nudge((e.key==='ArrowRight'?1:-1)*gap);}}
-    el.addEventListener('pointerdown',down);el.addEventListener('pointermove',move);el.addEventListener('pointerup',up);el.addEventListener('pointercancel',cancel);el.addEventListener('lostpointercapture',cancel);el.addEventListener('wheel',wheel,{passive:false});window.addEventListener('keydown',key);
+    function wheel(e:WheelEvent){if(!canBrowse()||e.ctrlKey)return;e.preventDefault();const horizontal=Math.abs(e.deltaX)>Math.abs(e.deltaY);const delta=horizontal?e.deltaX:e.deltaY;const factor=e.deltaMode===1?16:e.deltaMode===2?(horizontal?width:height):1;motion.wheelBy(delta*factor,width<650?halfH*2/height:halfW*2/width,e.timeStamp);}
+    function key(e:KeyboardEvent){if(!canBrowse())return;if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();motion.nudge((e.key==='ArrowRight'?1:-1)*gap);}}
+    el.addEventListener('pointerdown',down);el.addEventListener('pointermove',move);el.addEventListener('pointerup',up);el.addEventListener('pointercancel',cancel);el.addEventListener('lostpointercapture',cancel);window.addEventListener('wheel',wheel,{passive:false});window.addEventListener('keydown',key);
     const track=(e:PointerEvent)=>post.pointer(e.clientX,e.clientY);window.addEventListener('pointermove',track);
     function render(now:number){
       const dt=Math.min((now-previous)/1000,.05);previous=now;const state=props.current.state;
       const oldPosition=current,oldSpeed=speed;
-      if(!state.flight&&state.mode==='featured'){motion.step(dt);current=motion.position;speed=motion.speed;}else speed*=Math.exp(-12*dt);
+      if(canBrowse()){motion.step(dt);current=motion.position;speed=motion.speed;}else speed*=Math.exp(-12*dt);
       const oldBend=bendVelocity;
       const desiredBend=width<650?0:Math.tanh(speed*(width/(2*halfW))/900);
       bendVelocity+=(desiredBend-bendVelocity)*(1-Math.exp(-10*dt));
@@ -149,7 +150,7 @@ export function Gallery({ state, onOpen, onReady, onProgress }: { state: Gallery
       });geometryDirty=false;if(!state.flight)flyer.visible=false;ground.material.uniforms.halfW.value=halfW;ground.material.uniforms.opacity.value=(state.intro??1)*(1-state.reveal)*(1-(state.flight?.progress??0));post.render(renderer,scene,camera,dt,state.hole);frame=requestAnimationFrame(render);
     }
     frame=requestAnimationFrame(render);
-    return()=>{disposed=true;cancelAnimationFrame(frame);observer.disconnect();window.removeEventListener('keydown',key);window.removeEventListener('pointermove',track);el.removeEventListener('pointerdown',down);el.removeEventListener('pointermove',move);el.removeEventListener('pointerup',up);el.removeEventListener('pointercancel',cancel);el.removeEventListener('lostpointercapture',cancel);el.removeEventListener('wheel',wheel);buttons.forEach(b=>b.remove());cards.concat(flyer).forEach(m=>{m.geometry.dispose();m.material.dispose();});ground.geometry.dispose();ground.material.dispose();resources.forEach(t=>t.dispose());post.dispose();renderer.dispose();renderer.domElement.remove();};
+    return()=>{disposed=true;cancelAnimationFrame(frame);observer.disconnect();window.removeEventListener('keydown',key);window.removeEventListener('pointermove',track);el.removeEventListener('pointerdown',down);el.removeEventListener('pointermove',move);el.removeEventListener('pointerup',up);el.removeEventListener('pointercancel',cancel);el.removeEventListener('lostpointercapture',cancel);window.removeEventListener('wheel',wheel);buttons.forEach(b=>b.remove());cards.concat(flyer).forEach(m=>{m.geometry.dispose();m.material.dispose();});ground.geometry.dispose();ground.material.dispose();resources.forEach(t=>t.dispose());post.dispose();renderer.dispose();renderer.domElement.remove();};
   },[]);
   return <div ref={host} className="gallery" aria-label="Drag to explore the Nailong collection"/>;
 }
