@@ -43,3 +43,4 @@ main{overflow:clip}
 .detail-tag .tag-size{display:block;visibility:hidden}
 .detail-tag svg.tag-surface{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}
 .detail-tag svg.tag-surface text{font:inherit}
+.booting .gallery{pointer-events:none}.booting .navigation{opacity:0;pointer-events:none}

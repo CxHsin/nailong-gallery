@@ -12,10 +12,23 @@ const rect = (element:Element):Origin => {const r=element.getBoundingClientRect(
 export function App(){
   const [view,setView]=useState<View|null>(null),[ready,setReady]=useState(false);
   const [indexPreview,setIndexPreview]=useState<{index:number;x:number;y:number}|null>(null);
-  const state=useRef<GalleryState>({flight:null,mode:'featured',reveal:0,hole:0});
+  const state=useRef<GalleryState>({flight:null,mode:'featured',reveal:0,hole:0,boot:0,intro:0});
   const panel=useRef<HTMLDivElement>(null),hero=useRef<HTMLImageElement>(null),info=useRef<HTMLDivElement>(null);
   const current=useRef<View|null>(null),busy=useRef(false),animation=useRef<gsap.core.Timeline|null>(null),pendingClose=useRef(false);
   const switchDirection=useRef(0),switchOffset=useRef(0);
+  const bootAnimation=useRef<gsap.core.Tween|null>(null),bootStarted=useRef(false);
+  const loadProgress=useCallback((progress:number)=>{bootAnimation.current?.kill();bootAnimation.current=gsap.to(state.current,{boot:progress,duration:.8,ease:'power3.out'});},[]);
+  const finishBoot=useCallback(()=>{
+    if(bootStarted.current)return;bootStarted.current=true;
+    bootAnimation.current?.kill();
+    const t=gsap.timeline();
+    t.to(state.current,{boot:1,duration:.8,ease:'power3.out'});
+    t.to(state.current,{intro:1,duration:1.6,ease:'none'},'+=.5');
+    t.to('.navigation',{opacity:1,duration:.6,clearProps:'opacity'},2.1);
+    t.call(()=>setReady(true));
+  },[]);
+  useEffect(()=>()=>{bootAnimation.current?.kill();gsap.killTweensOf(state.current);},[]);
+
   current.current=view;
   const open=useCallback((next:View)=>{
     if(busy.current)return;
@@ -159,12 +172,13 @@ export function App(){
     return()=>{window.removeEventListener('popstate',pop);window.removeEventListener('keydown',key);window.removeEventListener('resize',resize);};
   },[close]);
   useEffect(()=>{
+    if(!ready)return;
     const match=location.hash.match(/^#nailong-(\d+)$/);const id=match?Number(match[1]):0;
     const hash=location.hash.slice(1);
     history.replaceState(null,'',location.pathname);
     if(id>=1&&id<=20)open({type:'art',index:id-1,origin:{left:innerWidth*.3,top:innerHeight*.3,width:innerWidth*.4,height:innerHeight*.4},fromIndex:true});
     else if(hash==='all'||hash==='about'||hash==='collection')open({type:hash});
-  },[open]);
+  },[open,ready]);
   useEffect(()=>{
     if(!view)return;const el=panel.current??info.current;if(!el)return;const previous=document.activeElement as HTMLElement;el.focus({preventScroll:true});
     const trap=(e:KeyboardEvent)=>{if(e.key!=='Tab')return;const scope=view.type==='art'?el.parentElement!:el;const nodes=Array.from(scope.querySelectorAll<HTMLElement>('.related-sheet,.art-panel button,.art-panel a, .info-layer button,.info-layer a')).filter(n=>n.getClientRects().length>0);const first=nodes[0],last=nodes[nodes.length-1];if(e.shiftKey&&(document.activeElement===first||document.activeElement===el)){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}};
@@ -179,11 +193,11 @@ export function App(){
     if(hero.current)observer.observe(hero.current);
     return()=>{el.removeEventListener('scroll',syncHero);observer.disconnect();};
   },[view]);
-  return <main>
-    <Gallery state={state.current} onOpen={(index,origin)=>open({type:'art',index,origin})} onReady={()=>setReady(true)}/>
+  return <main className={ready?'':'booting'}>
+    <Gallery state={state.current} onOpen={(index,origin)=>open({type:'art',index,origin})} onReady={finishBoot} onProgress={loadProgress}/>
     <header className={`navigation ${view?.type==='art'?'nav-hidden':''}`}><button className="wordmark" onClick={()=>view?close():undefined}>NAILONG GALLERY</button><button onClick={()=>view?.type==='about'||view?.type==='collection'?close():open({type:'about'})}>{view?.type==='about'||view?.type==='collection'?'CLOSE':'ABOUT'}</button></header>
     <footer className={`navigation ${view?.type==='art'?'nav-hidden':''}`}><div><button className={view?.type==='all'?'muted':''} onClick={()=>view?close():undefined}>FEATURED</button><span className="slash">/</span><button className={view?.type==='all'?'':'muted'} onClick={()=>open({type:'all'})}>ALL</button></div><button onClick={()=>view?.type==='collection'?close():open({type:'collection'})}>COLLECTION</button></footer>
-    {!ready&&<div className="loading"><span className="load-ring"/></div>}
+    {!ready&&<div className="sr-only" role="status">Loading Nailong Gallery</div>}
     {view?.type==='art'&&<><button className="related-sheet related-left" aria-label={`Previous portrait: ${artworks[(view.index+19)%20].title}`} onClick={()=>changeArt(-1)}/><button className="related-sheet related-right" aria-label={`Next portrait: ${artworks[(view.index+1)%20].title}`} onClick={()=>changeArt(1)}/><div ref={panel} className="panel art-panel" role="dialog" aria-modal="true" aria-label={artworks[view.index].title} tabIndex={-1}>
       <DetailButton className="close" kind="cross" label="Close panel" onClick={()=>close()}/>
       <aside className="detail-copy"><TextLens title={artworks[view.index].title} description="A playful portrait from the Nailong collection. One little dragon, reimagined in a world of art and imagination."/><div className="tags"><DetailButton className="external-mark" kind="arrow" label="Portrait arrow"/><DetailButton className="detail-tag">NAILONG</DetailButton><span>{String(view.index+1).padStart(2,'0')}</span></div></aside>

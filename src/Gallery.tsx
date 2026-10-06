@@ -5,13 +5,13 @@ import { PostEffects } from './PostEffects';
 import { GalleryMotion } from './GalleryMotion';
 export type Origin = { left: number; top: number; width: number; height: number };
 export type Flight = { index: number; progress: number; panel: Origin; hero: Origin };
-export type GalleryState = { flight: Flight | null; mode: 'featured' | 'all' | 'about' | 'collection'; reveal: number; hole:number };
+export type GalleryState = { flight: Flight | null; mode: 'featured' | 'all' | 'about' | 'collection'; reveal: number; hole:number; boot?:number; intro?:number };
 const smooth = (a: number, b: number, x: number) => { const t = THREE.MathUtils.clamp((x-a)/(b-a),0,1); return t*t*(3-2*t); };
 
 // One continuous world-space surface carries both images and their titles.
-export function Gallery({ state, onOpen, onReady }: { state: GalleryState; onOpen: (index: number, origin: Origin) => void; onReady: () => void }) {
+export function Gallery({ state, onOpen, onReady, onProgress }: { state: GalleryState; onOpen: (index: number, origin: Origin) => void; onReady: () => void; onProgress?:(progress:number)=>void }) {
   const host = useRef<HTMLDivElement>(null);
-  const props = useRef({ state, onOpen, onReady }); props.current = { state, onOpen, onReady };
+  const props = useRef({ state, onOpen, onReady, onProgress }); props.current = { state, onOpen, onReady, onProgress };
   useEffect(() => {
     const el=host.current!;
     const scene=new THREE.Scene();
@@ -22,15 +22,15 @@ export function Gallery({ state, onOpen, onReady }: { state: GalleryState; onOpe
     let width=1,height=1,halfW=1,halfH=1,cardW=1,cardH=1,gap=1;
     const motion=new GalleryMotion();
     let current=0,speed=0,dragging=false,travel=0,lastX=0,lastY=0,downIndex=-1,initialized=false;
-    let bendVelocity=0;
+    let bendVelocity=0,lastIntro=-1;
     let pointerDirty=true,geometryDirty=true,hadFlight=false;
     const pointer=new THREE.Vector2(4,4);let hover=-1,disposed=false,loaded=0,frame=0,previous=performance.now();
     const loader=new THREE.TextureLoader(), resources: THREE.Texture[]=[];
     const material=(map: THREE.Texture|null)=>new THREE.ShaderMaterial({
-      uniforms:{map:{value:map},white:{value:0},alpha:{value:1},shade:{value:1},corner:{value:.055},ratio:{value:1.7},hover:{value:0},raw:{value:0},clipActive:{value:0},clipRect:{value:new THREE.Vector4()},viewport:{value:new THREE.Vector2(1,1)}},
+      uniforms:{map:{value:map},white:{value:0},alpha:{value:1},shade:{value:1},corner:{value:.055},ratio:{value:1.7},hover:{value:0},raw:{value:0},clipActive:{value:0},clipRect:{value:new THREE.Vector4()},viewport:{value:new THREE.Vector2(1,1)},bootFill:{value:1}},
       vertexShader:'varying vec2 vUv; varying float vDepth; varying vec3 vSurface; void main(){vUv=uv;vDepth=position.z;vSurface=(modelViewMatrix*vec4(position,1.)).xyz;gl_Position=projectionMatrix*vec4(vSurface,1.);}',
-      fragmentShader:`uniform sampler2D map; uniform float white,alpha,shade,corner,ratio,hover,raw,clipActive; uniform vec4 clipRect; uniform vec2 viewport; varying vec2 vUv; varying float vDepth; varying vec3 vSurface;
-        void main(){vec2 screen=gl_FragCoord.xy/viewport;if(clipActive>.5&&(screen.x<clipRect.x||screen.y<clipRect.y||screen.x>clipRect.z||screen.y>clipRect.w))discard;vec2 q=abs(vUv-.5)*vec2(ratio,1.)-vec2(ratio*.5-corner,.5-corner);float d=length(max(q,0.))+min(max(q.x,q.y),0.)-corner;if(d>0.)discard;
+      fragmentShader:`uniform sampler2D map; uniform float white,alpha,shade,corner,ratio,hover,raw,clipActive; uniform vec4 clipRect; uniform vec2 viewport; uniform float bootFill; varying vec2 vUv; varying float vDepth; varying vec3 vSurface;
+        void main(){if(vUv.x>bootFill)discard;vec2 screen=gl_FragCoord.xy/viewport;if(clipActive>.5&&(screen.x<clipRect.x||screen.y<clipRect.y||screen.x>clipRect.z||screen.y>clipRect.w))discard;vec2 q=abs(vUv-.5)*vec2(ratio,1.)-vec2(ratio*.5-corner,.5-corner);float d=length(max(q,0.))+min(max(q.x,q.y),0.)-corner;if(d>0.)discard;
         vec4 col=texture2D(map,vUv);float shadow=1.-shade*(.08+.25*clamp(-vDepth/12.+.35,0.,1.));vec3 c=col.rgb*shadow;
         vec3 n=normalize(cross(dFdx(vSurface),dFdy(vSurface)));if(n.z<0.)n=-n;
         vec3 viewDir=normalize(-vSurface),lightDir=normalize(vec3(-.22,.8,1.));
@@ -54,8 +54,8 @@ export function Gallery({ state, onOpen, onReady }: { state: GalleryState; onOpe
           const radius=width<650?52:30;ctx.fillStyle='#000';ctx.beginPath();ctx.arc(1628,930,radius,0,Math.PI*2);ctx.fill();ctx.font=`400 ${width<650?40:25}px Arial`;ctx.textAlign='center';ctx.fillStyle='#fff';ctx.fillText('↗',1628,942);
         };paint();
         const tex=new THREE.CanvasTexture(canvas);tex.colorSpace=THREE.SRGBColorSpace;tex.anisotropy=renderer.capabilities.getMaxAnisotropy();resources.push(tex);
-        mesh.material.uniforms.map.value=tex;mesh.userData.raw=t;mesh.userData.paint=()=>{paint();tex.needsUpdate=true;};loaded++;if(loaded===artworks.length)props.current.onReady();
-      },undefined,()=>{loaded++;if(loaded===artworks.length)props.current.onReady();});resources.push(raw);return mesh;
+        mesh.material.uniforms.map.value=tex;mesh.userData.raw=t;mesh.userData.paint=()=>{paint();tex.needsUpdate=true;};loaded++;props.current.onProgress?.(loaded/artworks.length);if(loaded===artworks.length)props.current.onReady();
+      },undefined,()=>{loaded++;props.current.onProgress?.(loaded/artworks.length);if(loaded===artworks.length)props.current.onReady();});resources.push(raw);return mesh;
     });
     const flyer=new THREE.Mesh(new THREE.PlaneGeometry(1,1,40,24),material(null));flyer.visible=false;flyer.frustumCulled=false;flyer.renderOrder=5;flyer.material.uniforms.raw.value=1;flyer.material.uniforms.shade.value=0;scene.add(flyer);
     const ground=new THREE.Mesh(new THREE.PlaneGeometry(300,300,48,24),new THREE.ShaderMaterial({
@@ -95,6 +95,13 @@ export function Gallery({ state, onOpen, onReady }: { state: GalleryState; onOpe
         let y=small?cx+localY:localY*surface[k+1]+surface[k+2];
         let z=small?0:localY*surface[k]+surface[k+3]-h*.11*cardH*(1-(2*u-1)**2)*(1-(2*v-1)**2);
         if(dest){x+=( (dest.left+u*dest.width-width/2)/width*2*halfW-x)*amount;y+=((height/2-dest.top-(1-v)*dest.height)/height*2*halfH-y)*amount;z=z*(1-amount)+flightBow*(1-(2*v-1)**2);}
+        const intro=props.current.state.intro??1;
+        if(!isHero&&intro<1&&mesh.userData.index<3){
+          const i=mesh.userData.index,step=i<3?Math.max(0,Math.min(1,(intro*1.6-i*.05)/1.5)):intro;
+          const eased=step<.5?Math.pow(2,20*step-10)/2:(2-Math.pow(2,-20*step+10))/2;
+          const bx=((i-1)*58+(u-.5)*50)/width*halfW*2,by=(v-.5)*5/height*halfH*2;
+          x=THREE.MathUtils.lerp(bx,x,eased);y=THREE.MathUtils.lerp(by,y,eased);z*=eased;
+        }
         positions.setXYZ(j,x,y,z);
         const row=Math.floor(j/columns),column=j%columns;
         if(!isHero&&((row===0||row===rows-1)&&column%4===0||column===0||column===columns-1)){
@@ -125,7 +132,7 @@ export function Gallery({ state, onOpen, onReady }: { state: GalleryState; onOpe
       const desiredBend=width<650?0:Math.tanh(speed*(width/(2*halfW))/900);
       bendVelocity+=(desiredBend-bendVelocity)*(1-Math.exp(-10*dt));
       const moved=Math.abs(bendVelocity-oldBend)>.00001||Math.abs(current-oldPosition)>.00001||Math.abs(speed-oldSpeed)>.0001;
-      geometryDirty ||= moved||!!state.flight||hadFlight;
+      geometryDirty ||= moved||!!state.flight||hadFlight||lastIntro!==(state.intro??1);lastIntro=state.intro??1;
       hadFlight=!!state.flight;
       if(dragging||state.flight||state.mode!=='featured')hover=-1;
       else if(pointerDirty||geometryDirty)hover=hit();
@@ -134,12 +141,12 @@ export function Gallery({ state, onOpen, onReady }: { state: GalleryState; onOpe
 
       cards.forEach((mesh,i)=>{
         const cx=(width<650?-1:1)*(THREE.MathUtils.euclideanModulo(i*gap-current+cycle/2,cycle)-cycle/2),chosen=state.flight?.index===i?state.flight:null;
-        mesh.visible=(Math.abs(cx)<(width<650?halfH:halfW)*2.6||!!chosen)&&state.reveal<.999;
+        mesh.visible=((state.intro??1)>0||i<3)&&(Math.abs(cx)<(width<650?halfH:halfW)*2.6||!!chosen)&&state.reveal<.999;
         const h=mesh.material.uniforms.hover.value;mesh.material.uniforms.hover.value=THREE.MathUtils.lerp(h,hover===i?1:0,1-Math.exp(-8*dt));
-        if(mesh.visible){if(geometryDirty||Math.abs(h-mesh.material.uniforms.hover.value)>.00001)bounds[i]=geometry(mesh,cx,h,chosen);mesh.material.uniforms.corner.value=chosen?THREE.MathUtils.lerp(width<650?.075:.055,width<650?15/chosen.panel.height:(width/75)/chosen.panel.height,chosen.progress):width<650?.075:.055;mesh.material.uniforms.ratio.value=chosen?THREE.MathUtils.lerp(1.7,chosen.panel.width/chosen.panel.height,chosen.progress):1.7;mesh.material.uniforms.white.value=chosen?smooth(.1,.75,chosen.progress):0;mesh.material.uniforms.shade.value=chosen?1-chosen.progress:1;mesh.material.uniforms.alpha.value=chosen?1:(1-state.reveal)*(1-(state.flight?.progress??0));mesh.renderOrder=chosen?3:0;}
-        const b=buttons[i],r=bounds[i];const css=`display:${mesh.visible&&!state.flight&&state.mode==='featured'?'block':'none'};left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px`;if(mesh.userData.hitCss!==css){b.style.cssText=css;mesh.userData.hitCss=css;}const tabIndex=r.left+r.width/2>0&&r.left+r.width/2<width?0:-1;if(b.tabIndex!==tabIndex)b.tabIndex=tabIndex;
+        if(mesh.visible){mesh.material.uniforms.bootFill.value=(state.intro??1)>0?1:Math.max(0,Math.min(1,(state.boot??1)*3-i));if(geometryDirty||Math.abs(h-mesh.material.uniforms.hover.value)>.00001)bounds[i]=geometry(mesh,cx,h,chosen);const bootStep=Math.max(0,Math.min(1,((state.intro??1)*1.6-i*.05)/1.5)),bootEase=i>=3?1:bootStep<=0?0:bootStep>=1?1:bootStep<.5?Math.pow(2,20*bootStep-10)/2:(2-Math.pow(2,-20*bootStep+10))/2;mesh.material.uniforms.corner.value=(state.intro??1)<1?THREE.MathUtils.lerp(.5,width<650?.075:.055,bootEase):chosen?THREE.MathUtils.lerp(width<650?.075:.055,width<650?15/chosen.panel.height:(width/75)/chosen.panel.height,chosen.progress):width<650?.075:.055;mesh.material.uniforms.ratio.value=(state.intro??1)<1?THREE.MathUtils.lerp(10,1.7,bootEase):chosen?THREE.MathUtils.lerp(1.7,chosen.panel.width/chosen.panel.height,chosen.progress):1.7;mesh.material.uniforms.white.value=chosen?smooth(.1,.75,chosen.progress):i<3?1-smooth(.08,.55,state.intro??1):0;mesh.material.uniforms.shade.value=chosen?1-chosen.progress:1;mesh.material.uniforms.alpha.value=(i<3?1:smooth(.65,1,state.intro??1))*(chosen?1:(1-state.reveal)*(1-(state.flight?.progress??0)));mesh.renderOrder=chosen?3:0;}
+        const b=buttons[i],r=bounds[i];const css=`display:${mesh.visible&&(state.intro??1)>=1&&!state.flight&&state.mode==='featured'?'block':'none'};left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px`;if(mesh.userData.hitCss!==css){b.style.cssText=css;mesh.userData.hitCss=css;}const tabIndex=r.left+r.width/2>0&&r.left+r.width/2<width?0:-1;if(b.tabIndex!==tabIndex)b.tabIndex=tabIndex;
         if(chosen){flyer.visible=chosen.progress>.02;flyer.material.uniforms.map.value=mesh.userData.raw;flyer.material.uniforms.alpha.value=smooth(.02,.18,chosen.progress);flyer.material.uniforms.ratio.value=THREE.MathUtils.lerp(1.7,chosen.hero.width/Math.max(1,chosen.hero.height),chosen.progress);flyer.material.uniforms.corner.value=.055*(1-chosen.progress);flyer.material.uniforms.clipActive.value=chosen.progress>.99?1:0;flyer.material.uniforms.viewport.value.set(width*renderer.getPixelRatio(),height*renderer.getPixelRatio());const p=chosen.panel;flyer.material.uniforms.clipRect.value.set(p.left/width,1-(p.top+p.height)/height,(p.left+p.width)/width,1-p.top/height);geometry(flyer,cx,0,chosen,true);}
-      });geometryDirty=false;if(!state.flight)flyer.visible=false;ground.material.uniforms.halfW.value=halfW;ground.material.uniforms.opacity.value=(1-state.reveal)*(1-(state.flight?.progress??0));post.render(renderer,scene,camera,dt,state.hole);frame=requestAnimationFrame(render);
+      });geometryDirty=false;if(!state.flight)flyer.visible=false;ground.material.uniforms.halfW.value=halfW;ground.material.uniforms.opacity.value=(state.intro??1)*(1-state.reveal)*(1-(state.flight?.progress??0));post.render(renderer,scene,camera,dt,state.hole);frame=requestAnimationFrame(render);
     }
     frame=requestAnimationFrame(render);
     return()=>{disposed=true;cancelAnimationFrame(frame);observer.disconnect();window.removeEventListener('keydown',key);window.removeEventListener('pointermove',track);el.removeEventListener('pointerdown',down);el.removeEventListener('pointermove',move);el.removeEventListener('pointerup',up);el.removeEventListener('pointercancel',cancel);el.removeEventListener('lostpointercapture',cancel);el.removeEventListener('wheel',wheel);buttons.forEach(b=>b.remove());cards.concat(flyer).forEach(m=>{m.geometry.dispose();m.material.dispose();});ground.geometry.dispose();ground.material.dispose();resources.forEach(t=>t.dispose());post.dispose();renderer.dispose();renderer.domElement.remove();};
