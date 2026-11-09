@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
+import { Analytics } from '@vercel/analytics/react';
 import { artworks } from './data';
 import { Gallery, type GalleryState, type Origin } from './Gallery';
 import { sheetEase } from './motion';
@@ -209,5 +210,6 @@ export function App(){
       <button className="sr-only" onClick={()=>close()}>Close panel</button>
     </div>}
     <div className="sr-only"><h1>Nailong Gallery</h1><p>Scroll or drag to browse. Click an image to open it.</p></div>
+    <Analytics />
   </main>;
 }
